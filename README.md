@@ -1,6 +1,11 @@
 # Smart Incubator — Sistem IoT Penetas Telur
 
-Sistem monitoring dan kontrol mesin penetas telur berbasis IoT dengan arsitektur web modern. Dilengkapi pengatur target suhu real-time dari website, kontrol aktuator relay (otomatis / manual), grafik telemetri time-series, dan manajemen batch siklus penetasan.
+Sistem monitoring dan kontrol mesin penetas telur berbasis IoT dengan arsitektur web modern. Dilengkapi pengatur target suhu real-time dari website, kontrol pemanas **dimmer AC (0–100%)** dengan PID, grafik telemetri time-series, dan manajemen batch siklus penetasan.
+
+> **Kontrol pemanas memakai dimmer (phase control), bukan relay on/off.**
+> Daya lampu diatur kontinu 0–100% sehingga suhu stabil di ±0.1–0.2 °C, bukan naik-turun
+> di sekitar ambang seperti kontrol histeresis. Detail rangkaian, kalibrasi, dan keselamatan:
+> [`docs/HARDWARE.md`](docs/HARDWARE.md). Firmware ESP32: [`firmware/penetas_esp32/`](firmware/penetas_esp32/penetas_esp32.ino).
 
 ---
 

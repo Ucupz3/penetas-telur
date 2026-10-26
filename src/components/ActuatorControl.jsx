@@ -29,6 +29,32 @@ export default function ActuatorControl({ device, showToast, onRefresh }) {
     }
   };
 
+  const handleSetHeaterPower = async (pct) => {
+    if (isAuto) {
+      showToast('error', 'Ubah ke Mode MANUAL terlebih dahulu untuk mengatur daya dimmer');
+      return;
+    }
+    setLoadingAction('heater_power');
+    try {
+      const res = await fetch('/api/device/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ heater_power: pct }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('success', `Daya lampu diset ${pct}%`);
+        if (onRefresh) onRefresh();
+      } else {
+        showToast('error', data.message);
+      }
+    } catch {
+      showToast('error', 'Gagal mengatur daya lampu');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
   const handleToggleDevice = async (field, currentState) => {
     if (isAuto) {
       showToast('error', 'Ubah ke Mode MANUAL terlebih dahulu untuk mengontrol aktuator secara langsung');
@@ -129,26 +155,28 @@ export default function ActuatorControl({ device, showToast, onRefresh }) {
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
               device?.heater_status ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse' : 'bg-slate-800 text-slate-400'
             }`}>
-              {device?.heater_status ? 'Menyala (ON)' : 'Mati (OFF)'}
+              {device?.heater_power ?? 0}% DAYA
             </span>
           </div>
 
           <div className="font-bold text-sm text-white">Lampu Pemanas</div>
-          <div className="text-[11px] text-slate-400 mt-0.5 mb-3">Relay 1 — Penghasil panas utama</div>
+          <div className="text-[11px] text-slate-400 mt-0.5 mb-3">Dimmer AC — kontrol 0–100%</div>
 
-          <button
-            onClick={() => handleToggleDevice('heater_status', device?.heater_status)}
-            disabled={isAuto || loadingAction === 'heater_status'}
-            className={`w-full py-1.5 px-3 rounded-lg text-xs font-semibold transition border ${
-              isAuto
-                ? 'opacity-40 cursor-not-allowed border-slate-800 text-slate-500 bg-slate-900'
-                : device?.heater_status
-                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30'
-                : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30'
-            }`}
-          >
-            {device?.heater_status ? 'Matikan Lampu' : 'Nyalakan Lampu'}
-          </button>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            value={device?.heater_power ?? 0}
+            disabled={isAuto || loadingAction === 'heater_power'}
+            onChange={(e) => handleSetHeaterPower(Number(e.target.value))}
+            className={`w-full accent-amber-500 ${isAuto ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+            <span>0%</span>
+            <span>{isAuto ? 'PID otomatis' : `Manual ${device?.heater_power ?? 0}%`}</span>
+            <span>100%</span>
+          </div>
         </div>
 
         {/* 2. Kipas Sirkulasi (Fan) */}

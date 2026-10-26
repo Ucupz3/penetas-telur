@@ -197,7 +197,7 @@ app.post('/api/batch/reset', async (req, res) => {
 // POST /api/device/control - Toggle mode and manual actuators
 app.post('/api/device/control', async (req, res) => {
   try {
-    const { mode, heater_status, fan_status, turner_status, humidifier_status } = req.body;
+    const { mode, heater_status, heater_power, fan_status, turner_status, humidifier_status } = req.body;
 
     const updates = [];
     const values = [];
@@ -206,7 +206,11 @@ app.post('/api/device/control', async (req, res) => {
       updates.push('mode = ?');
       values.push(mode);
     }
-    if (heater_status !== undefined) {
+    if (heater_power !== undefined) {
+      const pct = Math.max(0, Math.min(100, Math.round(Number(heater_power) || 0)));
+      updates.push('heater_power = ?', 'heater_status = ?');
+      values.push(pct, pct > 0 ? 1 : 0);
+    } else if (heater_status !== undefined) {
       updates.push('heater_status = ?');
       values.push(heater_status ? 1 : 0);
     }
@@ -242,7 +246,7 @@ app.post('/api/device/control', async (req, res) => {
 // POST /api/device/telemetry - Ingest from ESP32
 app.post('/api/device/telemetry', async (req, res) => {
   try {
-    const { temperature, humidity } = req.body;
+    const { temperature, humidity, heater_power } = req.body;
     if (temperature === undefined || humidity === undefined) {
       return res.status(400).json({ success: false, message: 'temperature and humidity are required' });
     }
@@ -267,16 +271,25 @@ app.post('/api/device/telemetry', async (req, res) => {
       let heater = 0;
       let fan = 0;
       let humidifier = 0;
+      let power = null;
 
-      // Temp logic
-      if (temp < batch.target_temp_min) {
-        heater = 1;
-        fan = 0;
-      } else if (temp >= batch.target_temp_max) {
-        heater = 0;
+      // Heater: ESP32 menjalankan PID lokal dan mengirim duty aktual (0-100%).
+      // Kalau perangkat tidak mengirim heater_power (firmware lama / simulator),
+      // server pakai kontrol proporsional sederhana sebagai fallback.
+      if (heater_power !== undefined) {
+        power = Math.max(0, Math.min(100, Math.round(Number(heater_power) || 0)));
+        heater = power > 0 ? 1 : 0;
+      } else {
+        const setpoint = (Number(batch.target_temp_min) + Number(batch.target_temp_max)) / 2;
+        const err = setpoint - temp;
+        power = Math.max(0, Math.min(100, Math.round(err * 40)));
+        heater = power > 5 ? 1 : 0;
+      }
+
+      // Fan: nyala kalau pemanas aktif (ratakan panas) atau suhu kelewat batas atas
+      if (power > 0 || temp >= batch.target_temp_max) {
         fan = 1;
       } else {
-        heater = 0;
         fan = 0;
       }
 
@@ -288,8 +301,8 @@ app.post('/api/device/telemetry', async (req, res) => {
       }
 
       await pool.query(
-        `UPDATE device_states SET heater_status = ?, fan_status = ?, humidifier_status = ? WHERE id = 1`,
-        [heater, fan, humidifier]
+        `UPDATE device_states SET heater_status = ?, heater_power = ?, fan_status = ?, humidifier_status = ? WHERE id = 1`,
+        [heater, power, fan, humidifier]
       );
 
       // Alert checks
@@ -313,10 +326,19 @@ app.post('/api/device/telemetry', async (req, res) => {
       controls: {
         mode: updatedDevice.mode,
         heater: updatedDevice.heater_status,
+        heater_power: updatedDevice.heater_power,
         fan: updatedDevice.fan_status,
         turner: updatedDevice.turner_status,
         humidifier: updatedDevice.humidifier_status,
       },
+      targets: batch ? {
+        temp_min: Number(batch.target_temp_min),
+        temp_max: Number(batch.target_temp_max),
+        temp_setpoint: (Number(batch.target_temp_min) + Number(batch.target_temp_max)) / 2,
+        humidity_min: Number(batch.target_humidity_min),
+        humidity_max: Number(batch.target_humidity_max),
+        day: batch.current_day,
+      } : null,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
